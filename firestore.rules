@@ -1,0 +1,175 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Helpers
+    function isSignedIn() { return request.auth != null; }
+    function incoming() { return request.resource.data; }
+    function existing() { return resource.data; }
+    function isValidId(id) { return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); }
+    function isNow(timeMs) { return timeMs is number && timeMs >= request.time.toMillis() - 300000 && timeMs <= request.time.toMillis() + 300000; }
+    function getUser(uid) { return get(/databases/$(database)/documents/users/$(uid)).data; }
+
+    function isAdmin() { 
+      return isSignedIn() && (request.auth.token.email == 'coppolek@gmail.com' || (getUser(request.auth.uid) != null && getUser(request.auth.uid).role == 'admin')); 
+    }
+
+    // Validation Helpers
+    function isValidUser(data) {
+      return data.keys().hasAll(['uid', 'role', 'name', 'createdAt', 'updatedAt']) &&
+             data.uid is string && data.uid.size() <= 128 && (data.uid == request.auth.uid || isAdmin()) &&
+             (!('email' in data) || (data.email is string && data.email.size() <= 256)) &&
+             data.role is string && (data.role == 'worker' || data.role == 'company' || data.role == 'admin') &&
+             data.name is string && data.name.size() <= 100 &&
+             data.createdAt is number && data.updatedAt is number &&
+             (!('availabilities' in data) || data.availabilities is list) &&
+             (!('location' in data) || (data.location is string && data.location.size() <= 150)) &&
+             (!('hourlyRate' in data) || (data.hourlyRate is number && data.hourlyRate >= 0 && data.hourlyRate <= 1000)) &&
+             (!('cvData' in data) || data.cvData is string) &&
+             (!('cvName' in data) || (data.cvName is string && data.cvName.size() <= 256)) &&
+             (!('cvType' in data) || (data.cvType is string && data.cvType.size() <= 100));
+    }
+
+    function isValidJob(data) {
+      return data.keys().hasAll(['companyId', 'title', 'description', 'location', 'status', 'createdAt', 'updatedAt']) &&
+             data.companyId is string && data.companyId.size() <= 128 &&
+             data.title is string && data.title.size() <= 150 &&
+             data.description is string && data.description.size() <= 2000 &&
+             data.location is string && data.location.size() <= 150 &&
+             data.status is string && (data.status == 'open' || data.status == 'closed') &&
+             data.createdAt is number && data.updatedAt is number &&
+             (!('requiredAvailabilities' in data) || data.requiredAvailabilities is list);
+    }
+
+    function isValidNotification(data) {
+      return data.keys().hasAll(['userId', 'message', 'read', 'createdAt']) &&
+             data.userId is string && data.userId.size() <= 128 &&
+             data.message is string && data.message.size() <= 500 &&
+             data.read is bool &&
+             data.createdAt is number;
+    }
+
+    function isValidApplication(data) {
+      return data.keys().hasAll(['jobId', 'workerId', 'companyId', 'status', 'createdAt', 'updatedAt']) &&
+             data.jobId is string && data.jobId.size() <= 128 &&
+             data.workerId is string && data.workerId.size() <= 128 &&
+             data.companyId is string && data.companyId.size() <= 128 &&
+             data.status is string && (data.status == 'pending' || data.status == 'accepted' || data.status == 'rejected') &&
+             data.createdAt is number && data.updatedAt is number;
+    }
+
+    function isValidReview(data) {
+      return data.keys().hasAll(['applicationId', 'reviewerId', 'revieweeId', 'rating', 'comment', 'createdAt']) &&
+             data.applicationId is string && data.applicationId.size() <= 128 &&
+             data.reviewerId is string && data.reviewerId.size() <= 128 &&
+             data.revieweeId is string && data.revieweeId.size() <= 128 &&
+             data.rating is number && data.rating >= 1 && data.rating <= 5 &&
+             data.comment is string && data.comment.size() <= 1000 &&
+             data.createdAt is number;
+    }
+
+    // Collections
+    match /users/{userId} {
+      allow read: if isSignedIn();
+      
+      allow create: if isSignedIn() &&
+                    isValidId(userId) &&
+                    userId == request.auth.uid &&
+                    isValidUser(incoming()) &&
+                    isNow(incoming().createdAt) &&
+                    isNow(incoming().updatedAt);
+                    
+      allow update: if isSignedIn() &&
+                    isValidId(userId) &&
+                    (userId == request.auth.uid || isAdmin()) &&
+                    isValidUser(incoming()) &&
+                    incoming().uid == existing().uid &&
+                    (incoming().role == existing().role || isAdmin()) &&
+                    incoming().createdAt == existing().createdAt &&
+                    isNow(incoming().updatedAt);
+                    
+      allow delete: if isAdmin();
+    }
+
+    match /jobs/{jobId} {
+      allow read: if isSignedIn();
+      
+      allow create: if isSignedIn() &&
+                    isValidId(jobId) &&
+                    isValidJob(incoming()) &&
+                    incoming().companyId == request.auth.uid &&
+                    getUser(request.auth.uid).role == 'company' &&
+                    isNow(incoming().createdAt) &&
+                    isNow(incoming().updatedAt);
+                    
+      allow update: if isSignedIn() &&
+                    isValidId(jobId) &&
+                    existing().companyId == request.auth.uid &&
+                    isValidJob(incoming()) &&
+                    incoming().companyId == existing().companyId &&
+                    incoming().createdAt == existing().createdAt &&
+                    isNow(incoming().updatedAt);
+                    
+      allow delete: if isSignedIn() &&
+                    isValidId(jobId) &&
+                    (existing().companyId == request.auth.uid || isAdmin());
+    }
+
+    match /applications/{appId} {
+      allow get: if isSignedIn() &&
+                    isValidId(appId) &&
+                    (existing().workerId == request.auth.uid || existing().companyId == request.auth.uid || isAdmin());
+                    
+      allow list: if isSignedIn() &&
+                     (resource.data.workerId == request.auth.uid || resource.data.companyId == request.auth.uid || isAdmin());
+                     
+      allow create: if isSignedIn() &&
+                    isValidId(appId) &&
+                    isValidApplication(incoming()) &&
+                    incoming().workerId == request.auth.uid &&
+                    getUser(request.auth.uid).role == 'worker' &&
+                    exists(/databases/$(database)/documents/jobs/$(incoming().jobId)) &&
+                    get(/databases/$(database)/documents/jobs/$(incoming().jobId)).data.companyId == incoming().companyId &&
+                    isNow(incoming().createdAt) &&
+                    isNow(incoming().updatedAt);
+                    
+      allow update: if isSignedIn() &&
+                    isValidId(appId) &&
+                    isValidApplication(incoming()) &&
+                    incoming().jobId == existing().jobId &&
+                    incoming().workerId == existing().workerId &&
+                    incoming().companyId == existing().companyId &&
+                    incoming().createdAt == existing().createdAt &&
+                    isNow(incoming().updatedAt) &&
+                    (
+                      (existing().workerId == request.auth.uid && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt'])) ||
+                      (existing().companyId == request.auth.uid && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt'])) ||
+                      isAdmin()
+                    );
+                    
+      allow delete: if isAdmin();
+    }
+    
+    match /banners/{bannerId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /notifications/{notificationId} {
+      allow read: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow create: if isSignedIn() && isValidNotification(incoming());
+      allow update: if isSignedIn() && existing().userId == request.auth.uid && incoming().userId == request.auth.uid && incoming().diff(existing()).affectedKeys().hasOnly(['read']) && incoming().read == true;
+      allow delete: if isSignedIn() && existing().userId == request.auth.uid;
+    }
+
+    match /reviews/{reviewId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && isValidId(reviewId) && isValidReview(incoming()) && incoming().reviewerId == request.auth.uid && isNow(incoming().createdAt);
+      allow update, delete: if isAdmin();
+    }
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "name": "MultiServizi Jobs",
+  "description": "Piattaforma per incontro domanda e offerta di lavoro nel settore multiservizi e pulizie.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

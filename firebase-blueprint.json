@@ -1,0 +1,66 @@
+{
+  "entities": {
+    "user": {
+      "title": "User",
+      "description": "Represents a registered user, either a worker or a company.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "maxLength": 128 },
+        "email": { "type": "string", "maxLength": 256 },
+        "role": { "type": "string", "enum": ["worker", "company"] },
+        "name": { "type": "string", "maxLength": 100 },
+        "availabilities": {
+          "type": "array",
+          "description": "JSON stringified list of availabilities to bypass Firestore nested limitations easily, or just an array of simple strings.",
+          "items": { "type": "string" }
+        },
+        "createdAt": { "type": "number" },
+        "updatedAt": { "type": "number" }
+      },
+      "required": ["uid", "email", "role", "name", "createdAt", "updatedAt"]
+    },
+    "job": {
+      "title": "Job",
+      "description": "A job posting created by a company.",
+      "type": "object",
+      "properties": {
+        "companyId": { "type": "string", "maxLength": 128 },
+        "title": { "type": "string", "maxLength": 150 },
+        "description": { "type": "string", "maxLength": 2000 },
+        "location": { "type": "string", "maxLength": 150 },
+        "status": { "type": "string", "enum": ["open", "closed"] },
+        "createdAt": { "type": "number" },
+        "updatedAt": { "type": "number" }
+      },
+      "required": ["companyId", "title", "description", "location", "status", "createdAt", "updatedAt"]
+    },
+    "notification": {      "title": "Notification",      "description": "An in-app notification for a user.",      "type": "object",      "properties": {        "userId": { "type": "string", "maxLength": 128 },        "message": { "type": "string", "maxLength": 500 },        "read": { "type": "boolean" },        "createdAt": { "type": "number" }      },      "required": ["userId", "message", "read", "createdAt"]    },    "review": {      "title": "Review",      "description": "A review from a company to a worker or vice versa.",      "type": "object",      "properties": {        "applicationId": { "type": "string", "maxLength": 128 },        "reviewerId": { "type": "string", "maxLength": 128 },        "revieweeId": { "type": "string", "maxLength": 128 },        "rating": { "type": "number", "minimum": 1, "maximum": 5 },        "comment": { "type": "string", "maxLength": 1000 },        "createdAt": { "type": "number" }      },      "required": ["applicationId", "reviewerId", "revieweeId", "rating", "comment", "createdAt"]    },    "application": {
+      "title": "Application",
+      "description": "A job application from a worker to a job posting.",
+      "type": "object",
+      "properties": {
+        "jobId": { "type": "string", "maxLength": 128 },
+        "workerId": { "type": "string", "maxLength": 128 },
+        "companyId": { "type": "string", "maxLength": 128 },
+        "status": { "type": "string", "enum": ["pending", "accepted", "rejected"] },
+        "createdAt": { "type": "number" },
+        "updatedAt": { "type": "number" }
+      },
+      "required": ["jobId", "workerId", "companyId", "status", "createdAt", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "users/{userId}": {
+      "schema": { "$ref": "#/entities/user" },
+      "description": "Collection of all users."
+    },
+    "jobs/{jobId}": {
+      "schema": { "$ref": "#/entities/job" },
+      "description": "Collection of all job postings."
+    },
+    "applications/{applicationId}": {
+      "schema": { "$ref": "#/entities/application" },
+      "description": "Collection of all job applications."
+    }
+  }
+}
